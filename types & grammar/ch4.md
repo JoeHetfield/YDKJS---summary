@@ -439,3 +439,565 @@ var b = a ? true : false;
 ```
 
 这里有一个隐藏的隐含强制转换，就是表达式`a`不得不首先被强制转换为`boolean`来进行真假测试。我称这种惯用法为“明确地隐含”。另外，我建议你在JavaScript中完全避免这种惯用法。它不会提供真正的好处，而且会让事情变得更糟。
+
+## 隐含的强制转换
+
+### 隐含地：Strings <--> Numbers
+
+为了服务于`number`的相加和`string`的连接两个目的，`+`操作符被重载了。
+
+```js
+var a = [1,2];
+var b = [3,4];
+
+a + b; // "1,23,4"
+```
+
+如果`+`的两个操作数之一是一个`string`（或在上面的步骤中成为一个`string`），那么操作就会是`string`连接。否则，它总是数字加法。这个操作现在和`ToNumber`抽象操作处理`object`的过程是一样的。在`array`上的`valueOf()`操作将会在产生一个简单基本类型时失败，于是它退回到一个`toString()`表现形式。两个`array`因此分别变成了`"1,2"`和`"3,4"`。现在，`+`就如你通常期望的那样连接这两个`string`：`"1,23,4"`。
+
+可以简单地通过将`number`和空`string``""`“相加”来把一个`number`强制转换为一个`string`。
+
+```js
+var a = 42;
+var b = a + "";
+
+b; // "42"
+```
+
+使用一个`+ ""`操作将`number`（隐含地）强制转换为`string`是极其常见/惯用的。由于`ToPrimitive`抽象操作的工作方式，`a + ""`在值`a`上调用`valueOf()`，它的返回值再最终通过内部的`ToString`抽象操作转换为一个`string`。但是`String(a)`只直接调用`toString()`。两种方式的最终结果都是一个`string`，但如果你使用一个`object`而不是一个普通的基本类型`number`的值，你可能不一定得到相同的`string`值！
+
+```js
+var a = {
+	valueOf: function() { return 42; },
+	toString: function() { return 4; }
+};
+
+a + "";			// "42"
+
+String( a );	// "4"
+```
+
+`-`操作符是仅为数字减法定义的，所以`a - 0`强制`a`的值被转换为一个`number`。虽然少见得多，`a * 1`或`a / 1`也会得到相同的结果，因为这些操作符也是仅为数字操作定义的。
+
+```js
+var a = "3.14";
+var b = a - 0;
+
+b; // 3.14
+```
+
+```js
+var a = [3];
+var b = [1];
+
+a - b; // 2
+```
+
+两个`array`值都不得不变为`number`，但它们首先会被强制转换为`string`（使用意料之中的`toString()`序列化），然后再强制转换为`number`，以便`-`减法操作可以实施。
+
+### 隐含地：Booleans --> Numbers
+
+```js
+function onlyOne() {
+	var sum = 0;
+	for (var i=0; i < arguments.length; i++) {
+		// 跳过falsy值。与将它们视为0相同，但是避开NaN
+		if (arguments[i]) {
+			sum += arguments[i];
+		}
+	}
+	return sum == 1;
+}
+
+var a = true;
+var b = false;
+
+onlyOne( b, a );				// true
+onlyOne( b, a, b, b, b );		// true
+
+onlyOne( b, b );				// false
+onlyOne( b, a, b, b, b, a );	// false
+```
+
+```js
+function onlyOne() {
+	var sum = 0;
+	for (var i=0; i < arguments.length; i++) {
+		sum += Number( !!arguments[i] );
+	}
+	return sum === 1;
+}
+```
+
+我们首先使用`!!arguments[i]`来将这个值强制转换为`true`或`false`。这样你就可以像`onlyOne( "42", 0 )`这样传入非`boolean`值了，而且它依然可以如意料的那样工作（要不然，你将会得到`string`连接，而且逻辑也不正确）。一旦我们确认它是一个`boolean`，我们就使用`Number(..)`进行另一个明确的强制转换来确保值是`0`或`1`。
+
+### 隐含地：* --> Boolean
+
+隐含的强制转换是当你以强制一个值被转换的方式使用这个值时才启动的。对于数字和`string`操作，很容易就能看出这种强制转换是如何发生的。
+
+（隐含地）要求/强制一个`boolean`转换的表达式操作：
+
+1. 在一个`if (..)`语句中的测试表达式。
+2. 在一个`for ( .. ; .. ; .. )`头部的测试表达式（第二个子句）。
+3. 在`while (..)`和`do..while(..)`循环中的测试表达式。
+4. 在`? :`三元表达式中的测试表达式（第一个子句）。
+5. `||`（“逻辑或”）和`&&`（“逻辑与”）操作符左手边的操作数（它用作测试表达式）。
+
+在这些上下文环境中使用的，任何还不是`boolean`的值，将通过本章早先讲解的`ToBoolean`抽象操作的规则，被隐含地强制转换为一个`boolean`。
+
+```js
+var a = 42;
+var b = "abc";
+var c;
+var d = null;
+
+if (a) {
+	console.log( "yep" );		// yep
+}
+
+while (c) {
+	console.log( "nope, never runs" );
+}
+
+c = d ? a : b;
+c;								// "abc"
+
+if ((a && d) || c) {
+	console.log( "yep" );		// yep
+}
+```
+
+### `||`和`&&`操作符
+
+在JavaScript中它们实际上不会得出一个逻辑值（也就是`boolean`），这与它们在其他的语言中的表现不同。它们得出两个操作数中的一个（而且仅有一个）。换句话说，它们在两个操作数的值中选择一个：
+
+```js
+var a = 42;
+var b = "abc";
+var c = null;
+
+a || b;		// 42
+a && b;		// "abc"
+
+c || b;		// "abc"
+c && b;		// null
+```
+
+`||`和`&&`操作符都在第一个操作数（`a`或`c`） 上进行`boolean`测试。如果这个操作数还不是`boolean`（就像在这里一样），就会发生一次普通的`ToBoolean`强制转换。
+
+1. 对于`||`操作符，如果测试结果为`true`，`||`表达式就将第一个操作数的值作为结果。如果测试结果为`false`，`||`表达式就将第二个操作数的值作为结果。
+
+2. 对于`&&`操作符，如果测试结果为`true`，`&&`表达式将第二个操作数的值作为结果。如果测试结果为`false`，那么`&&`表达式就将第一个操作数的值作为结果。
+
+`||`或`&&`表达式的结果总是两个操作数之一的底层值，不是（可能是被强制转换来的）测试的结果。
+
+```js
+a || b;
+// 大体上等价于：
+a ? a : b;
+
+a && b;
+// 大体上等价于：
+a ? b : a;
+```
+
+我说`a || b`“大体上等价”于`a ? a : b`，是因为虽然结果相同，但是这里有一个微妙的不同。在`a ? a : b`中，如果`a`是一个更复杂的表达式（例如像调用`function`那样可能带有副作用），那么这个表达式`a`将有可能被求值两次（如果第一次求值的结果为truthy）。相比之下，对于`a || b`，表达式`a`仅被求值一次，而且这个值将被同时用于强制转换测试和结果值（如果合适的话）。
+
+一个极其常见，而且很有帮助的用法：
+
+```js
+function foo(a,b) {
+	a = a || "hello";
+	b = b || "world";
+
+	console.log( a + " " + b );
+}
+
+foo();					// "hello world"
+foo( "yeah", "yeah!" );	// "yeah yeah!"
+
+foo( "That's it!", "" ); // "That's it! world" <-- Oops!
+```
+
+作为第二个参数的`""`是一个falsy值，所以`b = b || "world"`测试失败，而默认值`"world"`被替换上来，即便本来的意图可能是想让明确传入的`""`作为赋给`b`的值。你不得不只在所有的falsy值应当被跳过时使用它。不然，你就需要在你的测试中更加具体，而且可能应该使用一个`? :`三元操作符。
+
+`&&`操作符会“选择”第二个操作数，当且仅当第一个操作数测试为truthy，这种用法有时被称为“守护操作符” —— 第一个表达式的测试“守护”着第二个表达式。
+
+```js
+function foo() {
+	console.log( a );
+}
+
+var a = 42;
+
+a && foo(); // 42
+```
+
+`foo()`仅在`a`测试为truthy时会被调用。如果这个测试失败，这个`a && foo()`表达式语句将会无声地停止 —— 这被称为“短接” —— 而且永远不会调用`foo()`。几乎很少有人手动编写这样的东西。通常，他们会写`if (a) { foo(); }`。但是JS压缩器选择`a && foo()`是因为它短的多。
+
+`if`语句和`for`循环包含`a && (b || c)`这样的复合的逻辑表达式，它们到底都是怎么工作的：
+
+```js
+var a = 42;
+var b = null;
+var c = "foo";
+
+if (a && (b || c)) {
+	console.log( "yep" );
+}
+```
+
+`a && (b || c)`的结果实际上是`"foo"`，不是`true`。所以，这之后`if`语句强制值`"foo"`转换为一个`boolean`，这理所当然地将是`true`。
+
+### Symbol 强制转换
+
+从一个`symbol`到一个`string`的明确强制转换是允许的，但是相同的隐含强制转换时不被允许的，而且会抛出一个错误。
+
+```js
+var s1 = Symbol( "cool" );
+String( s1 );					// "Symbol(cool)"
+
+var s2 = Symbol( "not cool" );
+s2 + "";						// TypeError
+```
+
+## 宽松等价与严格等价
+
+`==`允许在等价性比较中进行强制转换，而`===`不允许强制转换。
+
+### 等价性的性能
+
+`==`好像要比`===`慢一些。强制转换确实要花费一点点处理时间，但也就是仅仅几微秒。如果你比较同类型的两个值，`==`和`===`使用的是相同的算法，所以除了在引擎实现上的一些微小的区别，它们做的应当是相同的工作。`==`和`===`都会检查它们的操作数的类型。不同之处在于它们在类型不同时如何反应。
+
+### 抽象等价性
+
+`==`操作符的行为被定义为“抽象等价性比较算法”。
+
+1. 如果两个被比较的值是同一类型，它们就像你期望的那样通过等价性简单自然地比较。比如，`42`只和`42`相等，而`"abc"`只和`"abc"`相等。在一般期望的结果中，有一些例外需要小心：
+
+* `NaN`永远不等于它自己
+* `+0`和`-0`是相等的
+
+2. `object`（包括`function`和`array`）的`==`宽松相等性比较。这样的两个值仅在它们引用完全相同的值时相等。
+
+`===`严格等价比较的定义一模一样，包括关于两个`object`的值的规定。很少有人知道，在两个`object`被比较的情况下，`==`和`===`的行为相同。
+
+如果你使用`==`款所等价来比较两个不同类型的值，它们两者或其中之一将需要被隐含地强制转换。由于这个强制转换，两个值最终归于同一类型，可以使用简单的值的等价性来直接比较它们相等与否。
+
+#### 比较：`string`与`number`
+
+1. 如果Type(x)是Number而Type(y)是String，返回比较x == ToNumber(y)的结果。
+2. 如果Type(x)是String而Type(y)是Number，返回比较ToNumber(x) == y的结果。
+
+```js
+var a = 42;
+var b = "42";
+
+a === b;	// false
+a == b;		// true
+```
+
+#### 比较：任何东西与`boolean`
+
+1. 如果Type(x)是Boolean，返回比较 ToNumber(x) == y 的结果。
+2. 如果Type(y)是Boolean，返回比较 x == ToNumber(y) 的结果。
+
+```js
+var x = true;
+var y = "42";
+
+x == y; // false
+```
+
+`Type(x)`确实是`Boolean`，所以它会实施`ToNumber(x)`，将`true`强制转换为`1`。现在，`1 == "42"`会被求值。这里面的类型依然不同，所以（实质上是递归地）我们再次向早先讲解过的算法求解，它将`"42"`强制转换为`42`，而`1 == 42`明显是`false`。
+
+```js
+var x = "42";
+var y = false;
+
+x == y; // false
+```
+
+`Type(y)`是`Boolean`，所以`ToNumber(y)`给出`0`。`"42" == 0`递归地变为`42 == 0`，这当然是`false`。
+
+值`"42"`既不`== true`也不`== false`：
+
+`"42"`的确是truthy，但是`"42" == true`根本就不是在进行一个boolean测试/强制转换，不管你的大脑怎么说，`"42"` 没有被强制转换为一个`boolean`（`true`），而是`true`被强制转换为一个`1`，而后`"42"`被强制转换为`42`。`ToBoolean`甚至都没参与到这里，所以`"42"`的真假是与`==`操作无关的！
+
+永远，不要在任何情况下，使用`== true`或`== false`：
+
+```js
+var a = "42";
+
+// 不好（会失败的！）：
+if (a == true) {
+	// ..
+}
+
+// 也不该（会失败的！）：
+if (a === true) {
+	// ..
+}
+
+// 足够好（隐含地工作）：
+if (a) {
+	// ..
+}
+
+// 更好（明确地工作）：
+if (!!a) {
+	// ..
+}
+
+// 也很好（明确地工作）：
+if (Boolean( a )) {
+	// ..
+}
+```
+
+`=== true`和`=== false`不允许强制转换，所以它们没有`ToNumber`强制转换，因而是安全的。
+
+#### 比较：`null`与`undefined`
+
+1. 如果x是null而y是undefined，返回true。
+2. 如果x是undefined而y是null，返回true。
+
+当使用`==`宽松等价比较`null`和`undefined`，它们是互相等价（也就是互相强制转换）的，而且在整个语言中不会等价于其他值了。这意味着`null`和`undefined`对于比较的目的来说，如果你使用`==`宽松等价操作符来允许它们互相隐含地强制转换的话，它们可以被认为是不可区分的。
+
+```js
+var a = null;
+var b;
+
+a == b;		// true
+a == null;	// true
+b == null;	// true
+
+a == false;	// false
+b == false;	// false
+a == "";	// false
+b == "";	// false
+a == 0;		// false
+b == 0;		// false
+```
+
+推荐使用这种强制转换来允许`null`和`undefined`是不可区分的，如此将它们作为相同的值对待。
+
+```js
+var a = doSomething();
+
+if (a == null) {
+	// ..
+}
+```
+
+`a == null`检查仅在`doSomething()`返回`null`或者`undefined`时才会通过，而在任何其他值的情况下将会失败，即便是`0`，`false`，和`""`这样的falsy值。
+
+明确形式没有必要地难看太多了（而且性能可能有点儿不好！）：
+
+```js
+var a = doSomething();
+
+if (a === undefined || a === null) {
+	// ..
+}
+```
+
+#### 比较：`object`与非`object`
+
+1. 如果Type(x)是一个String或者Number而Type(y)是一个Object，返回比较 x == ToPrimitive(y) 的结果。
+2. 如果Type(x)是一个Object而Type(y)是String或者Number，返回比较 ToPrimitive(x) == y 的结果。
+
+```js
+var a = 42;
+var b = [ 42 ];
+
+a == b;	// true
+```
+
+值`[ 42 ]`的`ToPrimitive`抽象操作被调用，结果为值`"42"`。这里它就变为`42 == "42"`，我们已经讲解过这将变为`42 == 42`，所以`a`和`b`被认为是强制转换地等价。
+
+这些条款仅提到了`String`和`Number`，而没有`Boolean`。这是因为，正如我们早先引述的，任何出现的`Boolean`操作数强制转换为一个`Number`。“拆箱”，就是一个基本类型值的`object`包装器（例如`new String("abc")`这样的形式）被展开，其底层的基本类型值（`"abc"`）被返回。这种行为与`==`算法中的`ToPrimitive`强制转换有关。
+
+```js
+var a = "abc";
+var b = Object( a );	// 与`new String( a )`相同
+
+a === b;				// false
+a == b;					// true
+```
+
+`a == b`为`true`是因为`b`通过`ToPrimitive`强制转换为它的底层简单基本标量值`"abc"`。
+
+然而由于`==`算法中的其他覆盖规则，有些值是例外：
+
+```js
+var a = null;
+var b = Object( a );	// 与`Object()`相同
+a == b;					// false
+
+var c = undefined;
+var d = Object( c );	// 与`Object()`相同
+c == d;					// false
+
+var e = NaN;
+var f = Object( e );	// 与`new Number( e )`相同
+e == f;					// false
+```
+
+值`null`和`undefined`不能被装箱 —— 它们没有等价的对象包装器 —— 所以`Object(null)`就像`Object()`一样，它们都仅仅产生一个普通对象。`NaN`可以被封箱到它等价的`Number`对象包装器中，当`==`导致拆箱时，比较`NaN == NaN`会失败，因为`NaN`永远不会它自己相等。
+
+### 边界情况
+
+#### 一个拥有其他值的数字
+
+```js
+Number.prototype.valueOf = function() {
+	return 3;
+};
+
+new Number( 2 ) == 3;	// true
+```
+
+`2 == 3`不会调到这个陷阱中，这是由于`2`和`3`都不会调用内建的`Number.prototype.valueOf()`方法，因为它们已经是基本`number`值，可以直接比较。然而，`new Number(2)`必须通过`ToPrimitive`强制转换，因此调用`valueOf()`。
+
+```js
+var i = 2;
+
+Number.prototype.valueOf = function() {
+	return i++;
+};
+
+var a = new Number( 42 );
+
+if (a == 2 && a == 3) {
+	console.log( "Yep, this happened." );
+}
+```
+
+这些都是邪恶的技巧。不要这么做。
+
+#### False-y 比较
+
+```js
+"0" == null;			// false
+"0" == undefined;		// false
+"0" == false;			// true -- 噢！
+"0" == NaN;				// false
+"0" == 0;				// true
+"0" == "";				// false
+
+false == null;			// false
+false == undefined;		// false
+false == NaN;			// false
+false == 0;				// true -- 噢！
+false == "";			// true -- 噢！
+false == [];			// true -- 噢！
+false == {};			// false
+
+"" == null;				// false
+"" == undefined;		// false
+"" == NaN;				// false
+"" == 0;				// true -- 噢！
+"" == [];				// true -- 噢！
+"" == {};				// false
+
+0 == null;				// false
+0 == undefined;			// false
+0 == NaN;				// false
+0 == [];				// true -- 噢！
+0 == {};				// false
+```
+
+#### 疯狂的情况
+
+```js
+[] == ![];		// true
+2 == [2];		// true
+"" == [null];	// true
+0 == "\n";		// true
+```
+
+#### 7个麻烦的，坑人的强制转换
+
+```js
+"0" == false;			// true -- 噢！
+false == 0;				// true -- 噢！
+false == "";			// true -- 噢！
+false == [];			// true -- 噢！
+"" == 0;				// true -- 噢！
+"" == [];				// true -- 噢！
+0 == [];				// true -- 噢！
+```
+
+这个列表中7个项目的4个与`== false`比较有关，我们早先说过你应当 **总是，总是** 避免的。我不认为你在程序里有很大的可能要在一个`boolean`测试中使用`== []`。你可能会使用`== ""`或`== 0`：
+
+```js
+function doSomething(a) {
+	if (a == "") {
+		// ..
+	}
+}
+
+function doSomething(a,b) {
+	if (a == b) {
+		// ..
+	}
+}
+```
+
+#### 安全地使用隐含强制转换
+
+1. 如果比较的任意一边可能出现`true`或者`false`值，那么就永远，永远不要使用`==`。
+2. 如果比较的任意一边可能出现`[]`，`""`，或`0`这些值，那么认真地考虑不使用`==`。
+3. 另一个强制转换保证 *不会* 咬到你的地方是`typeof`操作符。`typeof`总是将返回给你7中字符串之一（见第一章），它们中没有一个是空`""`字符串。这样，检查某个值的类型时不会有任何情况与 *隐含* 强制转换相冲突。`typeof x == "function"`就像`typeof x === "function"`一样100%安全可靠
+
+## 抽象关系比较
+
+“抽象关系型比较”算法：
+
+1. 首先在两个值上调用`ToPrimitive`强制转换，如果两个调用的返回值之一不是`string`，那么就使用`ToNumber`操作规则将这两个值强制转换为`number`值，并进行数字的比较。
+
+```js
+var a = [ 42 ];
+var b = [ "43" ];
+
+a < b;	// true
+b < a;	// false
+```
+
+2. 如果`<`比较的两个值都是`string`的话，就会在字符上进行简单的字典顺序（自然的字母顺序）比较。
+
+```js
+var a = [ "42" ];
+var b = [ "043" ];
+
+a < b;	// false
+```
+
+```js
+var a = [ 4, 2 ];
+var b = [ 0, 4, 3 ];
+
+a < b;	// false
+```
+
+```js
+var a = { b: 42 };
+var b = { b: 43 };
+
+a < b;	// ??
+```
+
+```js
+var a = { b: 42 };
+var b = { b: 43 };
+
+a < b;	// false
+a == b;	// false
+a > b;	// false
+
+a <= b;	// true
+a >= b;	// true
+```
+
+语言规范说，对于`a <= b`，它实际上首先对`b < a`求值，然后反转那个结果。因为`b < a`*也是*`false`，所以`a <= b`的结果为`true`。JS更准确地将`<=`考虑为“不大于”（`!(a > b)`，JS将它作为`(!b < a)`）。另外，`a >= b`被解释为它首先被考虑为`b <= a`，然后实施相同的推理。
